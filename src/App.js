@@ -3,34 +3,64 @@ import {
 	select,
 	json,
 	geoPath,
-	geoNaturalEarth1,
-	scaleLinear,
 	geoAzimuthalEqualArea,
 	geoAzimuthalEquidistant,
 	geoGnomonic,
 	geoOrthographic,
 	geoStereographic,
+	geoMercator,
 	geoEqualEarth,
 	scaleSqrt,
+	scaleSequential,
+	interpolateYlOrRd,
+    pointer
 } from 'd3';
+
+import {  } from 'd3'
 import { feature } from 'topojson-client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 function App() {
-	const [mapProjection, setMapProjection] = useState('scaleLinear');
+	const toolTip = (countryName, totalDeaths) => {
+		return select('#svgHome')
+			.append('div')
+			.style('opacity', 0)
+			.attr('class', 'tooltip')
+			.style('background-color', 'white')
+			.style('border', 'solid')
+			.style('border-width', '2px')
+			.style('border-radius', '5px')
+			.style('padding', '5px')
+			.html(`${countryName} total deaths: ${totalDeaths}`);
+	};
 
-	const getCountryData = (countryName, covidData) => {
-		let country = covidData?.find((country) => {
+	const [mapProjection, setMapProjection] = useState('scaleLinear');
+	const [covidData, setCovidData] = useState({});
+
+	const getCountryData = (countryName, data) => {
+		let country = data?.find((country) => {
 			return country.Country.toUpperCase() === countryName.toUpperCase();
 		});
-		if (typeof country === 'undefined') {
-			return 1;
-		}
-		return country.TotalDeaths;
+
+		let totalDeaths =
+			typeof country === 'undefined' ? 0 : country.TotalDeaths;
+		let tempData = covidData;
+		tempData[countryName] = totalDeaths;
+		setCovidData(tempData);
+		return totalDeaths;
+	};
+
+	const mouseOver = (e, d) => {
+        document.getElementsByClassName('tooltip')[0]?.remove();
+		toolTip(d.properties.name, covidData[d.properties.name]).style(
+			'opacity',
+			1
+		);
+		select(this).style('stroke', 'black').style('opacity', 0.8);
 	};
 
 	const handleProjectionChange = (e) => {
-        document.getElementById('svg').innerHTML = '';
+		document.getElementById('svg').innerHTML = '';
 		setMapProjection(e.target.value);
 		console.log(mapProjection);
 	};
@@ -52,6 +82,8 @@ function App() {
 				return geoOrthographic();
 			case 'geoStereographic':
 				return geoStereographic();
+			case 'geoMercator':
+				return geoMercator();
 			case 'geoEqualEarth':
 			default:
 				return geoEqualEarth();
@@ -65,13 +97,16 @@ function App() {
 				const svg = select('svg');
 				const projection = getMapProjection();
 				const pathGenerator = geoPath().projection(projection);
-				var radius = scaleSqrt().domain([0, 1e6]).range([0, 20]);
+				const radius = scaleSqrt().domain([0, 1e6]).range([0, 40]);
+				const color = scaleSequential()
+					.interpolator(interpolateYlOrRd)
+					.domain([0, 100000]);
 
 				svg.append('path')
 					.attr('class', 'sphere')
 					.attr('d', pathGenerator({ type: 'Sphere' }));
 				json(
-					'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json', 
+					'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
 				).then((data) => {
 					const countries = feature(data, data.objects.countries);
 					svg.selectAll('path')
@@ -80,7 +115,6 @@ function App() {
 						.append('path')
 						.attr('d', pathGenerator)
 						.attr('class', 'country');
-					// .on('mouseover', mouseOver);
 
 					svg.append('g')
 						.attr('class', 'circle')
@@ -101,23 +135,32 @@ function App() {
 								)
 							);
 						})
-						.attr('fill');
+						.attr('fill', function (d) {
+							return color(
+								getCountryData(
+									d.properties.name,
+									result.Countries
+								)
+							);
+						})
+						.on('mouseover', mouseOver)
 				});
 			});
 	}, [mapProjection]);
 
 	return (
-		<div className='App'>
-			<select onChange={handleProjectionChange}>
-				<option selected>geoEqualEarth</option>
+		<div className='App' id='svgHome'>
+			<select onChange={handleProjectionChange} value={mapProjection}>
+				<option>geoEqualEarth</option>
 				<option>geoAzimuthalEqualArea</option>
 				<option>geoAzimuthalEquidistant</option>
 				<option>geoGnomonic</option>
 				<option>geoOrthographic</option>
 				<option>geoStereographic</option>
+				<option>geoMercator</option>
 			</select>
 			<div>
-				<svg width='960' height='500' id="svg"></svg>
+				<svg width='960' height='500' id='svg'></svg>
 			</div>
 		</div>
 	);
